@@ -1,0 +1,17 @@
+# Go build artifacts
+bin/
+build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.log
+coverage.out
+
+# IDE/editor artifacts
+.idea/
+.vscode/
+*.swp

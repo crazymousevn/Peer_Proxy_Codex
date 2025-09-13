@@ -29,6 +29,15 @@ labelled `socks5` or `http`.
   requests with absolute URLs are forwarded using the `net/http` client, and
   `CONNECT` requests establish a tunnel for HTTPS traffic.
 
+The signaling request may optionally include a `forceRelay` boolean set to
+`true` to force usage of TURN relay candidates only.
+
+## Diagnostic Client
+
+`cmd/diag` provides a simple command-line diagnostic tool that performs a
+WebRTC offer/answer exchange with the signaling server and reports connection
+state changes. Use `-force-relay` to emulate relay-only connections.
+
 ## Development
 
 Common tasks are available via the Makefile:

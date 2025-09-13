@@ -116,6 +116,87 @@ func TestWebRTCOfferAnswer(t *testing.T) {
 	}
 }
 
+func TestWebRTCOfferAnswerForceRelay(t *testing.T) {
+	srv := NewServer()
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	peer, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("failed to create peer connection: %v", err)
+	}
+	defer peer.Close()
+
+	if _, err := peer.CreateDataChannel("dc", nil); err != nil {
+		t.Fatalf("failed to create data channel: %v", err)
+	}
+
+	offer, err := peer.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("failed to create offer: %v", err)
+	}
+	if err := peer.SetLocalDescription(offer); err != nil {
+		t.Fatalf("failed to set local description: %v", err)
+	}
+	<-webrtc.GatheringCompletePromise(peer)
+
+	reqBody, err := json.Marshal(struct {
+		webrtc.SessionDescription
+		ForceRelay bool `json:"forceRelay"`
+	}{SessionDescription: offer, ForceRelay: true})
+	if err != nil {
+		t.Fatalf("failed to marshal offer: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/signal", bytes.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", res.StatusCode)
+	}
+
+	var answer webrtc.SessionDescription
+	if err := json.NewDecoder(res.Body).Decode(&answer); err != nil {
+		t.Fatalf("failed to decode answer: %v", err)
+	}
+	if err := peer.SetRemoteDescription(answer); err != nil {
+		t.Fatalf("failed to set remote description: %v", err)
+	}
+}
+
+func TestCreatePeerConnectionPolicy(t *testing.T) {
+	srv := NewServer()
+	pc, err := srv.createPeerConnection(true)
+	if err != nil {
+		t.Fatalf("failed to create peer connection: %v", err)
+	}
+	cfg := pc.GetConfiguration()
+	pc.Close()
+	if cfg.ICETransportPolicy != webrtc.ICETransportPolicyRelay {
+		t.Fatalf("expected relay policy when forcing TURN")
+	}
+
+	pc, err = srv.createPeerConnection(false)
+	if err != nil {
+		t.Fatalf("failed to create peer connection: %v", err)
+	}
+	cfg = pc.GetConfiguration()
+	pc.Close()
+	if cfg.ICETransportPolicy != webrtc.ICETransportPolicyAll {
+		t.Fatalf("expected all policy when not forcing TURN")
+	}
+}
+
 func TestSOCKS5Proxy(t *testing.T) {
 	// Echo TCP server
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

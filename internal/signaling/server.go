@@ -26,6 +26,11 @@ func NewServer() *Server {
 }
 
 // ServeHTTP implements http.Handler.
+type signalRequest struct {
+	webrtc.SessionDescription
+	ForceRelay bool `json:"forceRelay"`
+}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost || r.URL.Path != "/signal" {
 		http.NotFound(w, r)
@@ -46,13 +51,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var offer webrtc.SessionDescription
-	if err := json.Unmarshal(body, &offer); err != nil {
+	var req signalRequest
+	if err := json.Unmarshal(body, &req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	peerConnection, err := s.createPeerConnection(req.ForceRelay)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -72,7 +77,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.conns = append(s.conns, peerConnection)
 	s.mu.Unlock()
 
-	if err := peerConnection.SetRemoteDescription(offer); err != nil {
+	if err := peerConnection.SetRemoteDescription(req.SessionDescription); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -104,6 +109,20 @@ func (s *Server) Close() {
 		_ = pc.Close()
 	}
 	s.conns = nil
+}
+
+// createPeerConnection constructs a PeerConnection optionally forcing TURN relay.
+func (s *Server) createPeerConnection(forceRelay bool) (*webrtc.PeerConnection, error) {
+	config := webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{URLs: []string{"stun:stun.l.google.com:19302"}},
+			{URLs: []string{"turn:turn.example.com:3478"}, Username: "user", Credential: "pass"},
+		},
+	}
+	if forceRelay {
+		config.ICETransportPolicy = webrtc.ICETransportPolicyRelay
+	}
+	return webrtc.NewPeerConnection(config)
 }
 
 // handleSOCKS5 proxies a SOCKS5 connection over the given data channel.
